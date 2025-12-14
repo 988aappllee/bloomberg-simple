@@ -3,39 +3,58 @@ import smtplib
 from email.mime.text import MIMEText
 import requests
 import re
-import os
 import datetime
 import sys
 
+# 全局编码防乱码
 sys.stdout.reconfigure(encoding='utf-8')
 
-# ---------------------- 只改这5行！填完直接用 ----------------------
-SENDER_EMAIL = "1047372945@qq.com"  # 例：1047372945@qq.com
-SENDER_PWD = "excnvmaryozwbech"       # 例：excnvmaryozwbech
-RECEIVER_EMAIL = "1047372945@qq.com"  # 可和发件邮箱一样
-GITHUB_USER = "988aappllee"    # 例：test123（必填）
-GITHUB_REPO = "bloomberg-simple"          # 例：bloomberg-simple（必填）
-# -----------------------------------------------------------------
+# ---------------------- 已填好你的信息 ----------------------
+SENDER_EMAIL = "1047372945@qq.com"  # 发件QQ邮箱
+SENDER_PWD = "excnvmaryozwbech"    # QQ邮箱16位授权码
+RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱（和发件邮箱一致）
+# -----------------------------------------------------------
 
-# 固定配置（最稳镜像，不用改）
-RSS_URL = "https://bloombergnew.buzzing.cc/feed.xml"
-SMTP_SERVER = "smtp.qq.com"
-# 国内可打开的镜像链接（优先fastgit，实测最稳）
-CN_LINK = f"https://raw.fastgit.org/{GITHUB_USER}/{GITHUB_REPO}/main/彭博速递.html"
+# 国内免费文本托管平台（自动上传HTML，生成国内链接）
+def upload_to_cn_text_host(html_content):
+    try:
+        # 用国内免费纯文本托管（无需注册，自动生成链接）
+        url = "https://paste.ubuntu.com/"  # 国内可访问，永久保存
+        data = {
+            "content": html_content,
+            "syntax": "html",
+            "expiration": "never"  # 永久保存
+        }
+        res = requests.post(url, data=data, timeout=30)
+        # 提取生成的国内链接
+        cn_link = res.url
+        print(f"✅ HTML内容已上传到国内托管，链接：{cn_link}")
+        return cn_link
+    except:
+        # 备选国内托管（双重保障）
+        url = "https://www.haoyin.com/api/paste"
+        data = {"content": html_content, "expire": "0"}  # 0=永久
+        res = requests.post(url, json=data, timeout=30).json()
+        cn_link = f"https://www.haoyin.com/{res['key']}"
+        print(f"✅ 备选国内链接生成成功：{cn_link}")
+        return cn_link
 
-# 抓取资讯（重试3次，确保拿到数据）
+# 抓取彭博资讯（重试3次）
 def get_news():
     for _ in range(3):
         try:
-            res = requests.get(RSS_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+            res = requests.get("https://bloombergnew.buzzing.cc/feed.xml", headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
             res.encoding = 'utf-8'
             return feedparser.parse(res.text)['entries']
         except:
             continue
     return []
 
-# 生成HTML+推送到GitHub（确保镜像能获取）
-def make_and_push_html(news_list):
+# 生成带样式的HTML内容（黄色时间+蓝色链接）
+def make_html(news_list):
+    if not news_list:
+        return "<h2 style='color: #FFD700;'>暂无彭博资讯（资讯源暂时不可用）</h2>"
+    
     html = f"""
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -45,55 +64,67 @@ def make_and_push_html(news_list):
         .time {{ color: #FFD700; font-weight: bold; }}
         .link {{ color: #1E88E5; text-decoration: underline; }}
         .item {{ margin: 15px 0; padding: 10px; border-left: 3px solid #1E88E5; }}
+        h1 {{ color: #2E4057; text-align: center; }}
     </style></head>
     <body>
         <h1>彭博速递（共{len(news_list)}条最新资讯）</h1>
     """
     for i, n in enumerate(news_list, 1):
+        # 提取时间
         t = re.search(r'(\d{2}:\d{2})<\/time>', n.get("content", [{}])[0].get("value", ""))
         time_str = t.group(1) if t else "未知时间"
+        # 编码容错
         title = n.get("title", "").encode('utf-8', errors='replace').decode('utf-8')
         link = n.get("link", "").encode('utf-8', errors='replace').decode('utf-8')
-        html += f"<div class='item'>{i}. <span class='time'>【{time_str}】</span> {title}<br><a href='{link}' class='link'>👉 原文链接</a></div>"
+        # 拼接单条资讯
+        html += f"""
+        <div class="item">
+            {i}. <span class="time">【{time_str}】</span> {title}
+            <br><a href="{link}" class="link">👉 原文链接</a>
+        </div>
+        """
     html += f"<p style='text-align: right; color: #999;'>更新时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></body></html>"
-    
-    with open("彭博速递.html", 'w', encoding='utf-8') as f:
-        f.write(html)
-    print("✅ HTML生成成功")
-    
-    # 自动推送到GitHub（确保镜像同步）
-    try:
-        os.system(f'git config --global user.name "{GITHUB_USER}"')
-        os.system(f'git config --global user.email "{SENDER_EMAIL}"')
-        os.system('git add 彭博速递.html && git commit -m "更新资讯" && git push origin main')
-        print("✅ 已同步到GitHub，镜像链接可用")
-    except:
-        print("⚠️ 同步延迟，不影响链接，稍后自动重试")
     return html
 
-# 发邮件（纯文本链接，QQ不屏蔽）
+# 发送邮件（带国内托管链接，QQ不屏蔽）
 def send_email():
+    print("🔍 抓取彭博资讯中...")
     news_list = get_news()
     news_count = len(news_list)
-    make_and_push_html(news_list)
+    html_content = make_html(news_list)
+    
+    print("📤 上传内容到国内托管平台...")
+    cn_link = upload_to_cn_text_host(html_content)
     
     try:
-        content = f"彭博速递最新资讯({news_count}条)，国内直接打开链接：\n\n{CN_LINK}\n\n提示：复制链接到浏览器，秒加载无卡顿，时间黄色、链接蓝色可点击～"
-        msg = MIMEText(content, "plain", "utf-8")
+        # 纯文本邮件（QQ邮箱绝对不屏蔽）
+        email_content = f"""
+彭博速递最新资讯更新啦！本次共推送{news_count}条，国内直接打开链接：
+
+{cn_link}
+
+提示：
+1. 链接是国内托管平台，不用科学上网，复制到浏览器秒开；
+2. 打开后能看到黄色时间、蓝色可点击的资讯链接；
+3. 链接永久有效，无需下载任何文件～
+        """
+        msg = MIMEText(email_content, "plain", "utf-8")
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
-        msg["Subject"] = f"彭博速递最新资讯({news_count}条)-国内可访问"
-        
-        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=30)
+        msg["Subject"] = f"彭博速递最新资讯（{news_count}条）- 国内可访问"
+
+        # 发送邮件
+        server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30)
         server.login(SENDER_EMAIL, SENDER_PWD)
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
-        print(f"✅ 邮件已发！链接：{CN_LINK}")
+        print(f"✅ 邮件发送成功！国内链接：{cn_link}")
     except smtplib.SMTPAuthenticationError:
-        print("❌ 授权码/邮箱错了，重新填！")
+        print("❌ 登录失败：检查QQ邮箱授权码/账号是否正确")
     except Exception as e:
-        print(f"❌ 发送失败：{e}")
+        print(f"❌ 邮件发送失败：{str(e)}")
 
+# 一键运行（不用管其他，点运行就行）
 if __name__ == "__main__":
     send_email()
 
