@@ -12,30 +12,31 @@ sys.stdout.reconfigure(encoding='utf-8')
 # ---------------------- 已填好你的信息 ----------------------
 SENDER_EMAIL = "1047372945@qq.com"  # 发件QQ邮箱
 SENDER_PWD = "excnvmaryozwbech"    # QQ邮箱16位授权码
-RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱（和发件邮箱一致）
+RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱
 # -----------------------------------------------------------
 
-# 国内免费文本托管平台（自动上传HTML，生成国内链接）
+# 国内无需登录的文本托管（temp.sh，国内可访问、永久保存）
 def upload_to_cn_text_host(html_content):
     try:
-        # 用国内免费纯文本托管（无需注册，自动生成链接）
-        url = "https://paste.ubuntu.com/"  # 国内可访问，永久保存
-        data = {
-            "content": html_content,
-            "syntax": "html",
-            "expiration": "never"  # 永久保存
+        # 国内可访问的免费托管（无需登录，自动生成链接）
+        url = "https://temp.sh/"
+        files = {
+            'file': ('彭博速递.html', html_content, 'text/html')
         }
-        res = requests.post(url, data=data, timeout=30)
-        # 提取生成的国内链接
-        cn_link = res.url
-        print(f"✅ HTML内容已上传到国内托管，链接：{cn_link}")
+        res = requests.post(url, files=files, timeout=30)
+        cn_link = res.text.strip()  # 提取生成的国内链接
+        print(f"✅ 国内链接生成成功：{cn_link}")
         return cn_link
     except:
-        # 备选国内托管（双重保障）
-        url = "https://www.haoyin.com/api/paste"
-        data = {"content": html_content, "expire": "0"}  # 0=永久
-        res = requests.post(url, json=data, timeout=30).json()
-        cn_link = f"https://www.haoyin.com/{res['key']}"
+        # 备选国内托管（双重保障，同样无需登录）
+        url = "https://paste.c-net.org/"
+        data = {
+            "content": html_content,
+            "format": "html",
+            "expire": "never"
+        }
+        res = requests.post(url, data=data, timeout=30)
+        cn_link = res.url
         print(f"✅ 备选国内链接生成成功：{cn_link}")
         return cn_link
 
@@ -106,7 +107,7 @@ def send_email():
 提示：
 1. 链接是国内托管平台，不用科学上网，复制到浏览器秒开；
 2. 打开后能看到黄色时间、蓝色可点击的资讯链接；
-3. 链接永久有效，无需下载任何文件～
+3. 链接永久有效，无需下载任何文件、无需登录～
         """
         msg = MIMEText(email_content, "plain", "utf-8")
         msg["From"] = SENDER_EMAIL
