@@ -22,12 +22,12 @@ GITHUB_USER = "988aappllee"  # 如github.com/xxx的xxx
 GITHUB_REPO = "bloomberg-simple" # 你的GitHub仓库名
 # -------------------------------------------------------------
 
-# 生成gitclone反代链接（国内100%可访问，支持中文/英文路径）
+# 生成国内反代链接（gh.api.99988866.xyz，支持GitHub Raw，国内100%可访问）
 def get_cn_proxy_link():
-    # GitHub Pages英文文件名链接（避免中文拦截）
-    github_pages_link = f"https://{GITHUB_USER}.github.io/{GITHUB_REPO}/bloomberg.html"
-    # 国内gitclone反代链接（零实名认证，点击即开）
-    cn_proxy_link = f"https://gitclone.com/{github_pages_link}"
+    # GitHub Raw链接（无需开启Pages，直接访问文件）
+    github_raw_link = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/bloomberg.html"
+    # 国内反代链接（零实名认证，点击即开）
+    cn_proxy_link = f"https://gh.api.99988866.xyz/{github_raw_link}"
     print(f"✅ 国内反代链接生成：{cn_proxy_link}")
     return cn_proxy_link
 
@@ -47,7 +47,7 @@ def get_news():
             continue
     return []
 
-# 生成带样式的HTML（英文文件名，避免反代拦截）
+# 生成带样式的HTML（英文文件名，避免拦截）
 def make_html(news_list):
     if not news_list:
         html = "<h2 style='color: #FFD700; text-align: center;'>暂无彭博资讯</h2>"
@@ -83,13 +83,13 @@ def make_html(news_list):
             """
         html += f"<p style='text-align: right; color: #999;'>更新：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</p></body></html>"
     
-    # 保存为英文文件名，避免反代拦截
+    # 保存为英文文件名
     with open("bloomberg.html", 'w', encoding='utf-8') as f:
         f.write(html)
     print("✅ HTML文件生成成功（英文文件名）")
     return html
 
-# 推送HTML到GitHub（同步Pages）
+# 推送HTML到GitHub（同步Raw文件）
 def push_to_github():
     try:
         # 配置Git用户信息
@@ -99,7 +99,7 @@ def push_to_github():
         subprocess.run(["git", "add", "bloomberg.html"], check=True)
         subprocess.run(["git", "commit", "-m", f"更新资讯 {datetime.datetime.now().strftime('%Y-%m-%d')}"], check=True)
         subprocess.run(["git", "push", "origin", "main"], check=True)
-        print("✅ 已推送到GitHub，Pages自动同步")
+        print("✅ 已推送到GitHub，Raw文件同步完成")
     except Exception as e:
         print(f"⚠️ 推送GitHub失败（下次重试）：{e}")
 
@@ -123,7 +123,7 @@ def send_email():
                     🔗 点击打开资讯页面（国内秒开）
                 </a>
             </p>
-            <p style="color: #999; font-size: 12px;">提示：该链接为gitclone国内反代平台，无需实名认证、无需科学上网，手机/电脑均可打开～</p>
+            <p style="color: #999; font-size: 12px;">提示：该链接为国内公益反代平台，无需实名认证、无需科学上网，手机/电脑均可打开～</p>
         </div>
         """
         msg = MIMEText(email_html, "html", "utf-8")
