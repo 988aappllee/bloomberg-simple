@@ -5,42 +5,25 @@ import requests
 import re
 import datetime
 import sys
+import base64
 
 # 全局编码防乱码
 sys.stdout.reconfigure(encoding='utf-8')
 
-# ---------------------- 已填好你的信息 ----------------------
+# ---------------------- 已填好你的信息，不用改 ----------------------
 SENDER_EMAIL = "1047372945@qq.com"  # 发件QQ邮箱
 SENDER_PWD = "excnvmaryozwbech"    # QQ邮箱16位授权码
 RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱
-# -----------------------------------------------------------
+# -------------------------------------------------------------------
 
-# 国内无需登录的文本托管（temp.sh，国内可访问、永久保存）
-def upload_to_cn_text_host(html_content):
-    try:
-        # 国内可访问的免费托管（无需登录，自动生成链接）
-        url = "https://temp.sh/"
-        files = {
-            'file': ('彭博速递.html', html_content, 'text/html')
-        }
-        res = requests.post(url, files=files, timeout=30)
-        cn_link = res.text.strip()  # 提取生成的国内链接
-        print(f"✅ 国内链接生成成功：{cn_link}")
-        return cn_link
-    except:
-        # 备选国内托管（双重保障，同样无需登录）
-        url = "https://paste.c-net.org/"
-        data = {
-            "content": html_content,
-            "format": "html",
-            "expire": "never"
-        }
-        res = requests.post(url, data=data, timeout=30)
-        cn_link = res.url
-        print(f"✅ 备选国内链接生成成功：{cn_link}")
-        return cn_link
+# 生成可点击的Data URI链接
+def make_clickable_data_uri(html_content):
+    html_bytes = html_content.encode('utf-8')
+    base64_str = base64.b64encode(html_bytes).decode('utf-8')
+    # 直接生成邮件里可点击的链接
+    return f"data:text/html;base64,{base64_str}"
 
-# 抓取彭博资讯（重试3次）
+# 抓取彭博资讯
 def get_news():
     for _ in range(3):
         try:
@@ -51,10 +34,10 @@ def get_news():
             continue
     return []
 
-# 生成带样式的HTML内容（黄色时间+蓝色链接）
+# 生成资讯HTML
 def make_html(news_list):
     if not news_list:
-        return "<h2 style='color: #FFD700;'>暂无彭博资讯（资讯源暂时不可用）</h2>"
+        return "<h2 style='color: #FFD700;'>暂无彭博资讯</h2>"
     
     html = f"""
     <!DOCTYPE html>
@@ -68,64 +51,46 @@ def make_html(news_list):
         h1 {{ color: #2E4057; text-align: center; }}
     </style></head>
     <body>
-        <h1>彭博速递（共{len(news_list)}条最新资讯）</h1>
+        <h1>彭博速递（共{len(news_list)}条）</h1>
     """
     for i, n in enumerate(news_list, 1):
-        # 提取时间
         t = re.search(r'(\d{2}:\d{2})<\/time>', n.get("content", [{}])[0].get("value", ""))
         time_str = t.group(1) if t else "未知时间"
-        # 编码容错
         title = n.get("title", "").encode('utf-8', errors='replace').decode('utf-8')
         link = n.get("link", "").encode('utf-8', errors='replace').decode('utf-8')
-        # 拼接单条资讯
-        html += f"""
-        <div class="item">
-            {i}. <span class="time">【{time_str}】</span> {title}
-            <br><a href="{link}" class="link">👉 原文链接</a>
-        </div>
-        """
-    html += f"<p style='text-align: right; color: #999;'>更新时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></body></html>"
+        html += f"<div class='item'>{i}. <span class='time'>【{time_str}】</span> {title}<br><a href='{link}' class='link'>👉 原文</a></div>"
+    html += f"<p style='text-align: right; color: #999;'>更新：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</p></body></html>"
     return html
 
-# 发送邮件（带国内托管链接，QQ不屏蔽）
+# 发送带可点击链接的邮件
 def send_email():
-    print("🔍 抓取彭博资讯中...")
     news_list = get_news()
     news_count = len(news_list)
     html_content = make_html(news_list)
-    
-    print("📤 上传内容到国内托管平台...")
-    cn_link = upload_to_cn_text_host(html_content)
-    
+    clickable_link = make_clickable_data_uri(html_content)
+
     try:
-        # 纯文本邮件（QQ邮箱绝对不屏蔽）
-        email_content = f"""
-彭博速递最新资讯更新啦！本次共推送{news_count}条，国内直接打开链接：
-
-{cn_link}
-
-提示：
-1. 链接是国内托管平台，不用科学上网，复制到浏览器秒开；
-2. 打开后能看到黄色时间、蓝色可点击的资讯链接；
-3. 链接永久有效，无需下载任何文件、无需登录～
+        # 邮件里直接放可点击的蓝色链接
+        email_html = f"""
+        <p>彭博速递最新资讯来啦！本次共{news_count}条：</p>
+        <p style="font-size: 16px;">
+            🔗 <a href="{clickable_link}" target="_blank" style="color: #1E88E5; font-weight: bold;">点击直接打开资讯页面（国内秒开）</a>
+        </p>
+        <p style="color: #999; font-size: 12px;">提示：点击后直接在浏览器打开，不用注册任何东西～</p>
         """
-        msg = MIMEText(email_content, "plain", "utf-8")
+        msg = MIMEText(email_html, "html", "utf-8")
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
-        msg["Subject"] = f"彭博速递最新资讯（{news_count}条）- 国内可访问"
+        msg["Subject"] = f"彭博速递（{news_count}条）- 点击即看"
 
-        # 发送邮件
         server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30)
         server.login(SENDER_EMAIL, SENDER_PWD)
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
-        print(f"✅ 邮件发送成功！国内链接：{cn_link}")
-    except smtplib.SMTPAuthenticationError:
-        print("❌ 登录失败：检查QQ邮箱授权码/账号是否正确")
+        print("✅ 邮件发好了！邮箱里点链接直接看～")
     except Exception as e:
-        print(f"❌ 邮件发送失败：{str(e)}")
+        print(f"❌ 发送失败：{e}")
 
-# 一键运行（不用管其他，点运行就行）
 if __name__ == "__main__":
     send_email()
 
