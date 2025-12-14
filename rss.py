@@ -10,18 +10,18 @@ import os
 import datetime
 
 # ---------------------- 只改这3行！----------------------
-SENDER_EMAIL = "你的QQ邮箱@qq.com"  # 例：1047372945@qq.com
-SENDER_PWD = "你的16位授权码"       # 例：excnvmaryozwbech
-RECEIVER_EMAIL = "收件邮箱@qq.com"  # 可和发件邮箱一样
+SENDER_EMAIL = "1047372945@qq.com"  # 例：1047372945@qq.com
+SENDER_PWD = "excnvmaryozwbech"       # 例：excnvmaryozwbech
+RECEIVER_EMAIL = "1047372945@qq.com"  # 可和发件邮箱一样
 # -------------------------------------------------------
 
 # 固定配置（不用改）
 RSS_URL = "https://bloombergnew.buzzing.cc/feed.xml"
 HTML_FILE = "彭博速递.html"
 SMTP_SERVER = "smtp.qq.com"
-LAST_LINK_FILE = "last_link.txt"  # 新增：记录最后一次推送的最新资讯链接
+LAST_LINK_FILE = "last_link.txt"  # 记录最后一次推送的最新资讯链接
 
-# 检查是否有新资讯（核心：对比最新链接判断是否更新）
+# 检查是否有新资讯（对比最新链接判断更新）
 def has_new_news():
     try:
         res = requests.get(RSS_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
@@ -88,25 +88,40 @@ def make_html(news_list):
         f.write(html)
     return True
 
-# 发邮件（带HTML附件）
+# 发邮件（修复编码错误，拆分SMTP调用）
 def send_email():
     if not os.path.exists(HTML_FILE):
+        print("❌ 未找到HTML文件，跳过邮件发送")
         return
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
-    msg["Subject"] = "彭博速递最新资讯（全部内容）"
-    # 正文
-    msg.attach(MIMEText("点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～", "html"))
-    # 附件
-    with open(HTML_FILE, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename={HTML_FILE}")
-        msg.attach(part)
-    # 发送
-    smtplib.SMTP_SSL(SMTP_SERVER, 465).login(SENDER_EMAIL, SENDER_PWD).sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECEIVER_EMAIL
+        msg["Subject"] = "彭博速递最新资讯（全部内容）"
+        # 确保主题编码为UTF-8
+        msg["Subject"] = msg["Subject"].encode('utf-8')
+
+        # 正文（UTF-8编码）
+        body = MIMEText("点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～", "html", "utf-8")
+        msg.attach(body)
+
+        # 添加附件
+        with open(HTML_FILE, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            # 附件名UTF-8编码，避免中文乱码
+            part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{HTML_FILE}")
+            msg.attach(part)
+
+        # 拆分SMTP调用，修复编码错误
+        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=30)
+        server.login(SENDER_EMAIL, SENDER_PWD)  # 单独登录
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())  # 单独发送
+        server.quit()  # 关闭连接
+        print("✅ 邮件发送成功！")
+    except Exception as e:
+        print(f"❌ 邮件发送失败：{e}")
 
 # 核心运行（有更新才推送全部内容）
 if __name__ == "__main__":
