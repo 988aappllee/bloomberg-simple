@@ -9,37 +9,37 @@ import re
 import os
 import datetime
 
-# ---------------------- 只改这3行！----------------------
-SENDER_EMAIL = "1047372945@qq.com"  # 例：1047372945@qq.com
-SENDER_PWD = "excnvmaryozwbech"       # 例：excnvmaryozwbech
-RECEIVER_EMAIL = "1047372945@qq.com"  # 可和发件邮箱一样
-# -------------------------------------------------------
+# ---------------------- 已填好的信息（替换为你真实的授权码/邮箱） ----------------------
+SENDER_EMAIL = "1047372945@qq.com"  # 发件QQ邮箱
+SENDER_PWD = "excnvmaryozwbech"    # QQ邮箱16位授权码
+RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱（和发件邮箱一致）
+# -------------------------------------------------------------------------------------
 
-# 固定配置（不用改）
+# 固定配置
 RSS_URL = "https://bloombergnew.buzzing.cc/feed.xml"
 HTML_FILE = "彭博速递.html"
 SMTP_SERVER = "smtp.qq.com"
-LAST_LINK_FILE = "last_link.txt"  # 记录最后一次推送的最新资讯链接
+LAST_LINK_FILE = "last_link.txt"
 
-# 检查是否有新资讯（对比最新链接判断更新）
+# 检查是否有新资讯（对比最新链接）
 def has_new_news():
     try:
         res = requests.get(RSS_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
         news_list = feedparser.parse(res.content).entries
         if not news_list:
             return False, None
-        # 最新资讯的链接（唯一标识）
+        
         latest_link = news_list[0]["link"]
-        # 首次运行/无历史记录 → 视为有新资讯
+        # 首次运行/无历史记录
         if not os.path.exists(LAST_LINK_FILE):
             with open(LAST_LINK_FILE, 'w', encoding='utf-8') as f:
                 f.write(latest_link)
             return True, news_list
-        # 读取历史链接，对比是否更新
+        
+        # 对比历史链接判断更新
         with open(LAST_LINK_FILE, 'r', encoding='utf-8') as f:
             old_link = f.read().strip()
         if latest_link != old_link:
-            # 更新历史链接为最新
             with open(LAST_LINK_FILE, 'w', encoding='utf-8') as f:
                 f.write(latest_link)
             return True, news_list
@@ -49,11 +49,12 @@ def has_new_news():
         print(f"检查资讯更新失败：{e}")
         return False, None
 
-# 生成HTML（黄色时间+蓝色链接，包含全部资讯）
+# 生成HTML文件（黄色时间+蓝色链接）
 def make_html(news_list):
     if not news_list:
         return False
-    # HTML样式（固定，不用改）
+    
+    # HTML样式与内容拼接
     html = f"""
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -69,13 +70,13 @@ def make_html(news_list):
     <body>
         <h1>彭博速递（共{len(news_list)}条最新资讯）</h1>
     """
-    # 拼接全部资讯
+    # 拼接所有资讯
     for i, n in enumerate(news_list, 1):
         # 提取时间
         t = re.search(r'(\d{2}:\d{2})<\/time>', n.get("content", [{}])[0].get("value", ""))
         time = t.group(1) if t else n.get("updated", "")[:10].split('-')[1:]
         time = ":".join(time) if isinstance(time, list) else time
-        # 拼接内容
+        # 拼接单条资讯
         html += f"""
         <div class="item">
             {i}. <span class="time">【{time}】</span> {n["title"]}
@@ -83,67 +84,59 @@ def make_html(news_list):
         </div>
         """
     html += f"<p style='text-align: right; color: #999;'>更新时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></body></html>"
+    
     # 保存HTML文件
     with open(HTML_FILE, 'w', encoding='utf-8') as f:
         f.write(html)
+    print(f"✅ HTML文件生成成功，共{len(news_list)}条资讯")
     return True
 
-# 发邮件（彻底修复链式调用+编码错误）
+# 发送邮件（修复附件bin问题+编码+邮件头）
 def send_email():
     if not os.path.exists(HTML_FILE):
         print("❌ 未找到HTML文件，跳过邮件发送")
         return
+    
     try:
-        # 1. 构建邮件对象，指定UTF-8编码
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
-        # 邮件主题UTF-8编码，避免中文乱码
-        msg["Subject"] = "彭博速递最新资讯（全部内容）"
+        msg["Subject"] = "彭博速递最新资讯（全部内容）"  # 修复邮件头嵌入问题
 
+        # 邮件正文
+        body = MIMEText("点击附件查看彭博资讯全部内容，时间黄色高亮、链接蓝色可点击～", "html", "utf-8")
+        msg.attach(body)
 
-        # 2. 添加邮件正文（UTF-8编码）
-        body_content = "点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～"
-        msg.attach(MIMEText(body_content, "html", "utf-8"))
-
-        # 3. 添加HTML附件（处理中文文件名）
+        # 添加HTML附件（修复MIME类型，解决bin问题）
         with open(HTML_FILE, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
+            part = MIMEBase("text", "html")  # 改为HTML专属MIME类型，不再是二进制流
             part.set_payload(f.read())
             encoders.encode_base64(part)
-            # 附件名采用UTF-8编码，兼容所有邮箱
+            # 双文件名配置，确保QQ邮箱正确识别为HTML
             part.add_header(
                 "Content-Disposition",
-                f"attachment; filename*=UTF-8''{HTML_FILE}"
+                f"attachment; filename*=UTF-8''{HTML_FILE}; filename={HTML_FILE}"
             )
             msg.attach(part)
 
-        # 4. 拆分SMTP调用（核心修复：避免链式调用）
-        # 创建SMTP对象
+        # 拆分SMTP调用，避免编码/属性错误
         server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=30)
-        # 执行登录（单独调用，不链式）
         server.login(SENDER_EMAIL, SENDER_PWD)
-        # 发送邮件（单独调用）
-        server.sendmail(
-            from_addr=SENDER_EMAIL,
-            to_addrs=RECEIVER_EMAIL,
-            msg=msg.as_string()
-        )
-        # 关闭连接
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
-        print("✅ 邮件发送成功！")
+        print("✅ 邮件发送成功，附件为HTML文件！")
     except smtplib.SMTPAuthenticationError:
         print("❌ 邮件登录失败：请检查QQ邮箱授权码或账号是否正确")
     except Exception as e:
         print(f"❌ 邮件发送失败：{str(e)}")
 
-# 核心运行（有更新才推送全部内容）
+# 核心运行逻辑
 if __name__ == "__main__":
     has_new, news_list = has_new_news()
     if has_new and news_list:
         if make_html(news_list):
             send_email()
-            print(f"✅ 成功推送{len(news_list)}条最新资讯，查收邮箱～")
+            print(f"✅ 全流程完成，共推送{len(news_list)}条资讯，查收邮箱！")
     else:
         print("❌ 暂无新资讯，无需推送")
 
