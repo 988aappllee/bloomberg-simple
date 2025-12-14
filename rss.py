@@ -12,19 +12,24 @@ import os
 sys.stdout.reconfigure(encoding='utf-8')
 
 # ---------------------- 配置信息（必改！）----------------------
-# QQ邮箱信息（已填好你的信息）
-SENDER_EMAIL = "1047372945@qq.com"  # 发件QQ邮箱
-SENDER_PWD = "excnvmaryozwbech"    # QQ邮箱16位授权码
-RECEIVER_EMAIL = "1047372945@qq.com"  # 收件邮箱
+# QQ邮箱信息（已填好）
+SENDER_EMAIL = "1047372945@qq.com"
+SENDER_PWD = "excnvmaryozwbech"
+RECEIVER_EMAIL = "1047372945@qq.com"
 
-# Gitee信息（替换为你的）
-GITEE_USER = "988aappllee"    # Gitee主页的用户名（如gitee.com/xxx的xxx）
-GITEE_REPO = "bloomberg-gitee"    # 你创建的Gitee仓库名
-GITEE_TOKEN = "35e38c0961d0b8bce2a94c1ff2e8b263" # 刚生成的私人令牌
+# GitHub信息（替换为你的）
+GITHUB_USER = "988aappllee"  # 如github.com/xxx的xxx
+GITHUB_REPO = "bloomberg-simple" # 你的GitHub仓库名
 # -------------------------------------------------------------
 
-# Gitee Pages国内可点击链接（自动拼接）
-GITEE_PAGE_LINK = f"https://{GITEE_USER}.gitee.io/{GITEE_REPO}/彭博速递.html"
+# 生成国内反代链接（gh-proxy.com，零实名认证，国内可访问）
+def get_cn_proxy_link():
+    # GitHub Pages原链接
+    github_pages_link = f"https://{GITHUB_USER}.github.io/{GITHUB_REPO}/彭博速递.html"
+    # 国内反代链接（gh-proxy.com，点击即开）
+    cn_proxy_link = f"https://gh-proxy.com/{github_pages_link}"
+    print(f"✅ 国内反代链接生成：{cn_proxy_link}")
+    return cn_proxy_link
 
 # 抓取彭博资讯（重试3次）
 def get_news():
@@ -36,13 +41,13 @@ def get_news():
                 timeout=20
             )
             res.encoding = 'utf-8'
-            return feedparser.parse(res.text)['entries']
+            return feedparser.parse(res.text)['entries'][:50]  # 限制条数，加快加载
         except Exception as e:
-            print(f"⚠️ 第{_+1}次抓取失败：{e}")
+            print(f"⚠️ 抓取失败{_+1}次：{e}")
             continue
     return []
 
-# 生成带样式的HTML内容
+# 生成带样式的HTML
 def make_html(news_list):
     if not news_list:
         html = "<h2 style='color: #FFD700; text-align: center;'>暂无彭博资讯</h2>"
@@ -84,47 +89,41 @@ def make_html(news_list):
     print("✅ HTML文件生成成功")
     return html
 
-# 推送HTML到Gitee仓库（自动同步Pages）
-def push_to_gitee():
+# 推送HTML到GitHub（同步Pages）
+def push_to_github():
     try:
-        # 克隆Gitee仓库（首次运行）
-        gitee_repo_url = f"https://{GITEE_USER}:{GITEE_TOKEN}@gitee.com/{GITEE_USER}/{GITEE_REPO}.git"
-        if not os.path.exists(GITEE_REPO):
-            subprocess.run(["git", "clone", gitee_repo_url], check=True)
-        os.chdir(GITEE_REPO)
-        
-        # 复制并推送HTML文件
-        subprocess.run(["cp", f"../彭博速递.html", "./"], check=True)
-        subprocess.run(["git", "config", "--global", "user.name", GITEE_USER], check=True)
+        # 配置Git用户信息
+        subprocess.run(["git", "config", "--global", "user.name", GITHUB_USER], check=True)
         subprocess.run(["git", "config", "--global", "user.email", SENDER_EMAIL], check=True)
+        # 提交并推送
         subprocess.run(["git", "add", "彭博速递.html"], check=True)
         subprocess.run(["git", "commit", "-m", f"更新资讯 {datetime.datetime.now().strftime('%Y-%m-%d')}"], check=True)
-        subprocess.run(["git", "push", "origin", "master"], check=True)
-        os.chdir("..")
-        print(f"✅ 已推送到Gitee，链接：{GITEE_PAGE_LINK}")
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+        print("✅ 已推送到GitHub，Pages自动同步")
     except Exception as e:
-        print(f"⚠️ 推送Gitee失败（下次重试）：{e}")
+        print(f"⚠️ 推送GitHub失败（下次重试）：{e}")
 
-# 发送邮件（带可点击链接）
+# 发送带可点击反代链接的邮件
 def send_email():
     print("🔍 抓取彭博资讯中...")
     news_list = get_news()
     news_count = len(news_list)
     make_html(news_list)
-    push_to_gitee()
+    push_to_github()
+    cn_link = get_cn_proxy_link()
 
     try:
-        # 邮件正文：蓝色可点击链接，QQ邮箱直接跳转
+        # 邮件正文：蓝色可点击反代链接，QQ邮箱直接跳转
         email_html = f"""
         <div style="font-family: 微软雅黑; max-width: 600px; margin: 0 auto;">
             <h3 style="color: #2E4057; margin-bottom: 20px;">彭博速递最新资讯</h3>
             <p style="font-size: 15px; margin-bottom: 25px;">本次共更新 <b style="color: #1E88E5;">{news_count}</b> 条，点击下方链接直接查看：</p>
             <p style="margin-bottom: 30px;">
-                <a href="{GITEE_PAGE_LINK}" target="_blank" style="background: #1E88E5; color: #fff; padding: 12px 25px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 16px;">
-                    🔗 点击打开资讯页面
+                <a href="{cn_link}" target="_blank" style="background: #1E88E5; color: #fff; padding: 12px 25px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                    🔗 点击打开资讯页面（国内秒开）
                 </a>
             </p>
-            <p style="color: #999; font-size: 12px;">提示：该链接为Gitee国内平台，无需科学上网，手机/电脑均可打开～</p>
+            <p style="color: #999; font-size: 12px;">提示：该链接为国内反代平台，无需实名认证、无需科学上网，手机/电脑均可打开～</p>
         </div>
         """
         msg = MIMEText(email_html, "html", "utf-8")
@@ -132,16 +131,15 @@ def send_email():
         msg["To"] = RECEIVER_EMAIL
         msg["Subject"] = f"彭博速递（{news_count}条）- 国内点击即开"
 
-        # 发送邮件
         server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30)
         server.login(SENDER_EMAIL, SENDER_PWD)
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
-        print(f"✅ 邮件发送成功！{GITEE_PAGE_LINK}")
+        print(f"✅ 邮件发送成功！链接：{cn_link}")
     except smtplib.SMTPAuthenticationError:
         print("❌ 登录失败：检查QQ邮箱授权码是否正确")
     except Exception as e:
-        print(f"❌ 发送失败：{str(e)}")
+        print(f"❌ 发送失败：{e}")
 
 if __name__ == "__main__":
     send_email()
