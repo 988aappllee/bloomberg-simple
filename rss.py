@@ -99,7 +99,8 @@ def send_email():
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
         # 邮件主题UTF-8编码，避免中文乱码
-        msg["Subject"] = MIMEText("彭博速递最新资讯（全部内容）", "plain", "utf-8").as_string()
+        msg["Subject"] = "彭博速递最新资讯（全部内容）"
+
 
         # 2. 添加邮件正文（UTF-8编码）
         body_content = "点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～"
