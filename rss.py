@@ -19,9 +19,9 @@ RECEIVER_EMAIL = "1047372945@qq.com"  # 可和发件邮箱一样
 RSS_URL = "https://bloombergnew.buzzing.cc/feed.xml"
 HTML_FILE = "彭博速递.html"
 SMTP_SERVER = "smtp.qq.com"
-LAST_LINK_FILE = "last_link.txt"  # 新增：记录最后一次推送的最新资讯链接
+LAST_LINK_FILE = "last_link.txt"  # 记录最后一次推送的最新资讯链接
 
-# 检查是否有新资讯（核心：对比最新链接判断是否更新）
+# 检查是否有新资讯（对比最新链接判断更新）
 def has_new_news():
     try:
         res = requests.get(RSS_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
@@ -88,25 +88,53 @@ def make_html(news_list):
         f.write(html)
     return True
 
-# 发邮件（带HTML附件）
+# 发邮件（彻底修复链式调用+编码错误）
 def send_email():
     if not os.path.exists(HTML_FILE):
+        print("❌ 未找到HTML文件，跳过邮件发送")
         return
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
-    msg["Subject"] = "彭博速递最新资讯（全部内容）"
-    # 正文
-    msg.attach(MIMEText("点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～", "html"))
-    # 附件
-    with open(HTML_FILE, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename={HTML_FILE}")
-        msg.attach(part)
-    # 发送
-    smtplib.SMTP_SSL(SMTP_SERVER, 465).login(SENDER_EMAIL, SENDER_PWD).sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    try:
+        # 1. 构建邮件对象，指定UTF-8编码
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECEIVER_EMAIL
+        # 邮件主题UTF-8编码，避免中文乱码
+        msg["Subject"] = MIMEText("彭博速递最新资讯（全部内容）", "plain", "utf-8").as_string()
+
+        # 2. 添加邮件正文（UTF-8编码）
+        body_content = "点击附件查看彭博资讯全部内容，时间黄色、链接蓝色可点击～"
+        msg.attach(MIMEText(body_content, "html", "utf-8"))
+
+        # 3. 添加HTML附件（处理中文文件名）
+        with open(HTML_FILE, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            # 附件名采用UTF-8编码，兼容所有邮箱
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename*=UTF-8''{HTML_FILE}"
+            )
+            msg.attach(part)
+
+        # 4. 拆分SMTP调用（核心修复：避免链式调用）
+        # 创建SMTP对象
+        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=30)
+        # 执行登录（单独调用，不链式）
+        server.login(SENDER_EMAIL, SENDER_PWD)
+        # 发送邮件（单独调用）
+        server.sendmail(
+            from_addr=SENDER_EMAIL,
+            to_addrs=RECEIVER_EMAIL,
+            msg=msg.as_string()
+        )
+        # 关闭连接
+        server.quit()
+        print("✅ 邮件发送成功！")
+    except smtplib.SMTPAuthenticationError:
+        print("❌ 邮件登录失败：请检查QQ邮箱授权码或账号是否正确")
+    except Exception as e:
+        print(f"❌ 邮件发送失败：{str(e)}")
 
 # 核心运行（有更新才推送全部内容）
 if __name__ == "__main__":
